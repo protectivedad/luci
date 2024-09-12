@@ -196,7 +196,7 @@ local function supports_sysupgrade()
 end
 
 local function supports_reset()
-	return (os.execute([[grep -sq "^overlayfs:/overlay / overlayfs " /proc/mounts]]) == 0)
+	return (os.execute([[grep -sq "^overlayfs:/overlay / overlay " /proc/mounts]]) == 0)
 end
 
 local function storage_size()
