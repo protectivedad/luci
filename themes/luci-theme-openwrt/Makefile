@@ -7,7 +7,7 @@
 include $(TOPDIR)/rules.mk
 
 LUCI_TITLE:=LuCI OpenWrt.org theme
-LUCI_DEPENDS:=
+LUCI_DEPENDS:=@TODO
 
 include ../../luci.mk
 

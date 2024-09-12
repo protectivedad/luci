@@ -7,7 +7,7 @@
 include $(TOPDIR)/rules.mk
 
 LUCI_TITLE:=Freifunk Generic Theme
-LUCI_DEPENDS:=
+LUCI_DEPENDS:=@TODO
 
 include ../../luci.mk
 
