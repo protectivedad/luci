@@ -67,6 +67,11 @@ function m.parse(map)
 		luci.http.redirect(luci.dispatcher.build_url("admin/network/wireless", arg[1]))
 		return
 	end
+	if m:get(wdev:name(), "type") == "mtlk" and new_cc and new_cc ~= old_cc then
+		luci.sys.call("iw reg set %s" % ut.shellquote(new_cc))
+		luci.http.redirect(luci.dispatcher.build_url("admin/network/wireless", arg[1]))
+		return
+	end
 end
 
 m.title = luci.util.pcdata(wnet:get_i18n())
@@ -196,6 +201,9 @@ else
 		m:set(section, "channel", value[2])
 		m:set(section, "htmode", value[3])
 	end
+  noscan = s:taboption("general", Flag, "noscan", translate("Force 40MHz mode"),
+  translate("Always use 40MHz channels even if the secondary channel overlaps. Using this option does not comply with IEEE 802.11n-2009!"))
+  noscan.default = noscan.disabled
 end
 
 ------------------- MAC80211 Device ------------------
@@ -252,6 +260,36 @@ if hwtype == "mac80211" then
 end
 
 
+------------------- MTLK Device ------------------
+if hwtype == "mtlk" then
+	if #tx_power_list > 0 then
+		tp = s:taboption("general", ListValue,
+			"txpower", translate("Transmit Power"), "dBm")
+		tp.rmempty = true
+		tp.default = tx_power_cur
+		function tp.cfgvalue(...)
+			return txpower_current(Value.cfgvalue(...), tx_power_list)
+		end
+
+		tp:value("", translate("auto"))
+		for _, p in ipairs(tx_power_list) do
+			tp:value(p.driver_dbm, "%i dBm (%i mW)"
+				%{ p.display_dbm, p.display_mw })
+		end
+	end
+
+	local cl = iw and iw.countrylist
+	if cl and #cl > 0 then
+		cc = s:taboption("advanced", ListValue, "country", translate("Country Code"), translate("Use ISO/IEC 3166 alpha2 country codes."))
+		cc.default = tostring(iw and iw.country or "00")
+		for _, c in ipairs(cl) do
+			cc:value(c.alpha2, "%s - %s" %{ c.alpha2, c.name })
+		end
+	else
+		s:taboption("advanced", Value, "country", translate("Country Code"), translate("Use ISO/IEC 3166 alpha2 country codes."))
+	end
+
+end
 ------------------- Broadcom Device ------------------
 
 if hwtype == "broadcom" then
@@ -488,8 +526,81 @@ if hwtype == "mac80211" then
 
 	ifname = s:taboption("advanced", Value, "ifname", translate("Interface name"), translate("Override default interface name"))
 	ifname.optional = true
+
+  disassoc_low_ack = s:taboption("general", Flag, "disassoc_low_ack", translate("Disassociate On Low Acknowledgement"),translate("Allow AP mode to disconnect STAs based on low ACK condition"))
+  disassoc_low_ack.default = disassoc_low_ack.enabled
 end
 
+-------------------- MTLK Interface ----------------------
+if hwtype == "mtlk" then
+	mode:value("ap-wds", "%s (%s)" % {translate("Access Point"), translate("WDS")})
+	mode:value("sta-wds", "%s (%s)" % {translate("Client"), translate("WDS")})
+	mode:value("wds", translate("WDS"))
+	mode:value("monitor", translate("Monitor"))
+
+	function mode.write(self, section, value)
+		if value == "ap-wds" then
+			ListValue.write(self, section, "ap")
+			m.uci:set("wireless", section, "wds", 1)
+		elseif value == "sta-wds" then
+			ListValue.write(self, section, "sta")
+			m.uci:set("wireless", section, "wds", 1)
+		else
+			ListValue.write(self, section, value)
+			m.uci:delete("wireless", section, "wds")
+		end
+	end
+
+	function mode.cfgvalue(self, section)
+		local mode = ListValue.cfgvalue(self, section)
+		local wds  = m.uci:get("wireless", section, "wds") == "1"
+
+		if mode == "ap" and wds then
+			return "ap-wds"
+		elseif mode == "sta" and wds then
+			return "sta-wds"
+		else
+			return mode
+		end
+	end
+
+	hidden = s:taboption("general", Flag, "hidden", translate("Hide <abbr title=\"Extended Service Set Identifier\">ESSID</abbr>"))
+	hidden:depends({mode="ap"})
+	hidden:depends({mode="ap-wds"})
+
+
+	isolate = s:taboption("advanced", Flag, "isolate", translate("Isolate Clients"),
+	 translate("Prevents client-to-client communication"))
+	isolate:depends({mode="ap"})
+
+	doth = s:taboption("advanced", Flag, "doth", "802.11h")
+	doth:depends({mode="ap"})
+	doth:depends({mode="ap-wds"})
+	doth.default =doth.enabled
+	wmm = s:taboption("advanced", Flag, "wmm", translate("WMM Mode"))
+	wmm:depends({mode="ap"})
+	wmm:depends({mode="ap-wds"})
+	wmm.default =wmm.enabled
+
+	bssid:depends({mode="adhoc"})
+	bssid:depends({mode="sta"})
+	bssid:depends({mode="sta-wds"})
+	
+	mp = s:taboption("macfilter", ListValue, "macpolicy", translate("MAC-Address Filter"))
+	mp:value("", translate("disable"))
+	mp:value("allow", translate("Allow listed only"))
+	mp:value("deny", translate("Allow all except listed"))
+
+	ml = s:taboption("macfilter", DynamicList, "maclist", translate("MAC-List"))
+	ml.datatype = "macaddr"
+	ml:depends({macpolicy="allow"})
+	ml:depends({macpolicy="deny"})
+	nt.mac_hints(function(mac, name) ml:value(mac, "%s (%s)" %{ mac, name }) end)
+	disassoc_low_ack = s:taboption("general", Flag, "disassoc_low_ack", translate("Disassociate On Low Acknowledgement"),translate("Allow AP mode to disconnect STAs based on low ACK condition"))
+  	disassoc_low_ack.default =0
+
+
+end
 
 -------------------- Broadcom Interface ----------------------
 
@@ -611,9 +722,9 @@ encr:value("none", "No Encryption")
 encr:value("wep-open",   translate("WEP Open System"), {mode="ap"}, {mode="sta"}, {mode="ap-wds"}, {mode="sta-wds"}, {mode="adhoc"}, {mode="ahdemo"}, {mode="wds"})
 encr:value("wep-shared", translate("WEP Shared Key"),  {mode="ap"}, {mode="sta"}, {mode="ap-wds"}, {mode="sta-wds"}, {mode="adhoc"}, {mode="ahdemo"}, {mode="wds"})
 
-if hwtype == "mac80211" or hwtype == "prism2" then
-	local supplicant = fs.access("/usr/sbin/wpa_supplicant")
-	local hostapd = fs.access("/usr/sbin/hostapd")
+if hwtype == "mac80211" or hwtype == "prism2" or hwtype == "mtlk" then
+	local supplicant = fs.access("/opt/lantiq/bin/wpa_supplicant")
+	local hostapd = fs.access("/opt/lantiq/bin/hostapd")
 
 	-- Probe EAP support
 	local has_ap_eap  = (os.execute("hostapd -veap >/dev/null 2>/dev/null") == 0)
@@ -1060,10 +1171,9 @@ if hwtype == "mac80211" then
 	key_retries:depends({mode="ap-wds", encryption="psk2"})
 	key_retries:depends({mode="ap-wds", encryption="psk-mixed"})
 end
-
-if hwtype == "mac80211" or hwtype == "prism2" then
-	local wpasupplicant = fs.access("/usr/sbin/wpa_supplicant")
-	local hostcli = fs.access("/usr/sbin/hostapd_cli")
+if hwtype == "mac80211" or hwtype == "prism2" or hwtype == "mtlk" then
+	local wpasupplicant = fs.access("/opt/lantiq/bin/wpa_supplicant")
+	local hostcli = fs.access("/opt/lantiq/bin/hostapd_cli")
 	if hostcli and wpasupplicant then
 		wps = s:taboption("encryption", Flag, "wps_pushbutton", translate("Enable WPS pushbutton, requires WPA(2)-PSK"))
 		wps.enabled = "1"

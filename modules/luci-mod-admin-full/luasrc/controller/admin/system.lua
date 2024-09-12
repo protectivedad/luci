@@ -196,7 +196,7 @@ local function supports_sysupgrade()
 end
 
 local function supports_reset()
-	return (os.execute([[grep -sq "^overlayfs:/overlay / overlay " /proc/mounts]]) == 0)
+	return (os.execute([[grep -sq "^overlayfs:/overlay / overlayfs " /proc/mounts]]) == 0)
 end
 
 local function storage_size()
@@ -358,7 +358,7 @@ function action_reset()
 			addr  = "192.168.1.1"
 		})
 
-		fork_exec("sleep 1; killall dropbear uhttpd; sleep 1; jffs2reset -y && reboot")
+		fork_exec("sleep 1; killall dropbear uhttpd; sleep 1; rm -rf /overlay/*; sleep 1; reboot")
 		return
 	end
 
