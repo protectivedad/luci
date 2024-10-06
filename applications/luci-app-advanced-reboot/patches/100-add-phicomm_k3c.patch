@@ -1,0 +1,10 @@
+--- a/luasrc/controller/advanced_reboot.lua
++++ b/luasrc/controller/advanced_reboot.lua
+@@ -14,6 +14,7 @@ devices = {
+   {"Linksys WRT1900ACv2", "linksys-cobra", "mtd4", "mtd6", 32, "boot_part", 1, 2, "bootcmd", "run nandboot", "run altnandboot"},
+   {"Linksys WRT1900ACS", "linksys-shelby", "mtd4", "mtd6", 32, "boot_part", 1, 2, "bootcmd", "run nandboot", "run altnandboot"},
+   {"Linksys WRT3200ACM", "linksys-rango", "mtd5", "mtd7", 32, "boot_part", 1, 2, "bootcmd", "run nandboot", "run altnandboot"},
++  {"Phicomm K3C", "lantiq,grx500", "mtd10", "mtd12", 32, "active_bank", "A", "B", "update_chk", 3, 1},
+   {"ZyXEL NBG6817","nbg6817","mmcblk0p4","mmcblk0p7",32,nil,255,1}
+ }
+ 
